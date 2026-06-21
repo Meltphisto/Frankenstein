@@ -2,63 +2,24 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class ResourceLocation : BaseLocation,IFusionMaterialHolder
+public class ResourceLocation : BaseLocation
 {
-    [SerializeField] private GameObject output;
     [SerializeField] private Transform spawnPoint;
 
-    private FusionMaterialObject holdingFusionMaterialObject;
+    [SerializeField] private FusionMaterialObjectSO outputMaterial;
 
     public override void Interact(Player player)
     {
-        if (!IsHoldingObject())
+        //Spawn resource and give it to player
+        if (player.IsHoldingObject())
         {
-            if (player.IsHoldingObject())
-            {
-                //Do nothing
-            }
-            else
-            {
-                GameObject item = Instantiate(output);
-
-                item.GetComponent<FusionMaterialObject>().SetFusionMaterialObjectParent(this);
-            }
+            //Do nothing
         }
         else
         {
-            if (player.IsHoldingObject())
-            {
-                //Do nothing
-            }
-            else
-            {
-                GetFusionMaterialObject().SetFusionMaterialObjectParent(player);
-            }
+            FusionMaterialObject.SpawnFusionMaterialObject(outputMaterial, player);
         }
     }
 
-    public void ClearHoldingObject()
-    {
-        holdingFusionMaterialObject = null;
-    }
 
-    public FusionMaterialObject GetFusionMaterialObject()
-    {
-        return holdingFusionMaterialObject;
-    }
-
-    public Transform GetHoldPointTransform()
-    {
-        return spawnPoint;
-    }
-
-    public bool IsHoldingObject()
-    {
-        return holdingFusionMaterialObject != null;
-    }
-
-    public void SetHoldingObject(FusionMaterialObject fusionMaterialObject)
-    {
-        holdingFusionMaterialObject = fusionMaterialObject;
-    }
 }

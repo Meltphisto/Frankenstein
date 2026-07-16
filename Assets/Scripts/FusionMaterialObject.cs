@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.WSA;
 
 public class FusionMaterialObject : MonoBehaviour
 {
@@ -35,6 +36,13 @@ public class FusionMaterialObject : MonoBehaviour
         FusionMaterialObject spawnedObject = spawnedTransform.GetComponent<FusionMaterialObject>();
 
         spawnedObject.SetFusionMaterialObjectParent(holder);
+    }
+
+    public void DestroySelf()
+    {
+        holder.ClearHoldingObject();
+
+        Destroy(gameObject);
     }
 
     public FusionMaterialObjectSO GetFusionMaterialObjectSO()

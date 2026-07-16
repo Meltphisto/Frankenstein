@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: LegTest
   m_EditorClassIdentifier: 
   id: 0
-  itemName: BoneLeg
+  itemName: Lumber
   prefab: {fileID: 1144090247754630043, guid: be932acb8cdccb04aadefe3eb2e64548, type: 3}
   materialType: 3
   sprite: {fileID: 0}

@@ -26,7 +26,7 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
     [SerializeField] private LayerMask interactLayer;
     private BaseLocation selectedLocation;
 
-    public event EventHandler<OnSelectedTableChangedEventArgs> OnSelectedTableChanged;
+    public event EventHandler<OnSelectedTableChangedEventArgs> OnSelectedLocationChanged;
     public class OnSelectedTableChangedEventArgs : EventArgs
     {
         public BaseLocation selectedLocation;
@@ -46,6 +46,15 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
         gameInput = GameInput.Instance;
         //Subscribe game input events
         gameInput.OnInteractAction += GameInput_OnInteractAction;
+        gameInput.OnInteractAlterAction += GameInput_OnInteractAlterAction;
+    }
+
+    private void GameInput_OnInteractAlterAction(object sender, EventArgs e)
+    {
+        if (selectedLocation != null)
+        {
+            selectedLocation.InteractAlter(this);
+        }
     }
 
     private void GameInput_OnInteractAction(object sender, EventArgs e)
@@ -135,7 +144,7 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
     {
         this.selectedLocation = selectedLocation;
 
-        OnSelectedTableChanged?.Invoke(this, new OnSelectedTableChangedEventArgs
+        OnSelectedLocationChanged?.Invoke(this, new OnSelectedTableChangedEventArgs
         {
             selectedLocation = selectedLocation
         });

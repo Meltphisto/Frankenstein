@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e6c6f4400556fa541a245728caad24b8, type: 3}
-  m_Name: LegTest
+  m_Name: WoodenLeg
   m_EditorClassIdentifier: 
   id: 0
-  itemName: Lumber
-  prefab: {fileID: 1144090247754630043, guid: be932acb8cdccb04aadefe3eb2e64548, type: 3}
+  itemName: WoodenTorso
+  prefab: {fileID: 1144090247754630043, guid: 8ed80dbff9eb5f74791092cac3f23d3b, type: 3}
   materialType: 3
   sprite: {fileID: 0}

@@ -2,22 +2,27 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class SelectedLocationVisual : MonoBehaviour
+public class SelectedVisual : MonoBehaviour
 {
     [SerializeField] private BaseLocation baseLocation;
     [SerializeField] private GameObject[] visualGameObjectArray;
 
     private void Start()
     {
-        Player.Instance.OnSelectedLocationChanged += Player_OnSelectedTableChanged;
+        Player.Instance.OnSelectedTargetChanged += Player_OnSelectedTableChanged;
         Hide();
     }
 
-    private void Player_OnSelectedTableChanged(object sender, Player.OnSelectedTableChangedEventArgs e)
+    private void Player_OnSelectedTableChanged(object sender, Player.OnSelectedTargetChangedEventArgs e)
     {
-        if (e.selectedLocation == baseLocation)
+        if (e.selectedTarget is BaseLocation)
         {
-            Show();
+            BaseLocation selectedLocation = e.selectedTarget as BaseLocation;
+            if (selectedLocation == baseLocation)
+            {
+                Show();
+            }
+            else Hide();
         }
         else Hide();
     }

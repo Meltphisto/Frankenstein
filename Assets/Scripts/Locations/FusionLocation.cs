@@ -96,15 +96,19 @@ public class FusionLocation : BaseLocation
 
     public void SpawnMonster()
     {
+        //Set monster transform
         Transform monsterTransform = Instantiate(monsterPrefab.transform);
         monsterTransform.SetParent(monsterSpawnPoint);
         monsterTransform.localPosition = Vector3.zero;
         monsterTransform.rotation = Quaternion.identity;
-        Monster monster = monsterTransform.GetComponent<Monster>();
 
-        monster.SetMonsterPartVisual(headBlock.GetBlockType(), headBlock.GetFusionMaterialObject());
-        monster.SetMonsterPartVisual(torsoBlock.GetBlockType(), torsoBlock.GetFusionMaterialObject());
-        monster.SetMonsterPartVisual(legBlock.GetBlockType(), legBlock.GetFusionMaterialObject());
-        monster.SetMonsterPartVisual(extraBlock.GetBlockType(), extraBlock.GetFusionMaterialObject());
+        //Set monster visual
+        MonsterVisual monsterVisual = monsterTransform.GetComponent<MonsterVisual>();
+        monsterVisual.SetMonsterPartVisual(headBlock.GetBlockType(), headBlock.GetFusionMaterialObject());
+        monsterVisual.SetMonsterPartVisual(torsoBlock.GetBlockType(), torsoBlock.GetFusionMaterialObject());
+        monsterVisual.SetMonsterPartVisual(legBlock.GetBlockType(), legBlock.GetFusionMaterialObject());
+        monsterVisual.SetMonsterPartVisual(extraBlock.GetBlockType(), extraBlock.GetFusionMaterialObject());
+
+
     }
 }

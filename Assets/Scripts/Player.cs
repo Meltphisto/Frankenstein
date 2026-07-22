@@ -13,23 +13,27 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
     //Movement Related
     [SerializeField] private float moveSpeed = 10f;
     [SerializeField] private float rotateSpeed = 10f;
+    [SerializeField] private float baitingSpeed = 3f;
+    private bool isHoldingBait = false;
     private bool canMove = false;
-    private bool isWalking = false;
+    //private bool isWalking = false;
 
     //Collision Related
-    [SerializeField] private float playerRadius = 0.7f;
+    [SerializeField] private float playerRadius = 0.5f;
     [SerializeField] private float playerHeight = 2f;
 
     //Interaction Related
     [SerializeField] private float interactDistance = 2f;
     private Vector3 lastInteractDir;
     [SerializeField] private LayerMask interactLayer;
-    private BaseLocation selectedLocation;
+    private IInteractable selectedTarget;
 
-    public event EventHandler<OnSelectedTableChangedEventArgs> OnSelectedLocationChanged;
-    public class OnSelectedTableChangedEventArgs : EventArgs
+   
+
+    public event EventHandler<OnSelectedTargetChangedEventArgs> OnSelectedTargetChanged;
+    public class OnSelectedTargetChangedEventArgs : EventArgs
     {
-        public BaseLocation selectedLocation;
+        public IInteractable selectedTarget;
     }
 
     //Pick up and drop object
@@ -51,17 +55,17 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
 
     private void GameInput_OnInteractAlterAction(object sender, EventArgs e)
     {
-        if (selectedLocation != null)
+        if (selectedTarget != null)
         {
-            selectedLocation.InteractAlter(this);
+            selectedTarget.InteractAlter(this);
         }
     }
 
     private void GameInput_OnInteractAction(object sender, EventArgs e)
     {
-        if(selectedLocation != null)
+        if(selectedTarget != null)
         {
-            selectedLocation.Interact(this);
+            selectedTarget.Interact(this);
         }
     }
 
@@ -76,9 +80,15 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
         //Get move direction from player input
         Vector2 inputVector = gameInput.GetMovementVectorNormalized();
         Vector3 moveDir = new Vector3(inputVector.x, 0f, inputVector.y);
-        float moveDistance = moveSpeed * Time.deltaTime;
+        float moveDistance = Time.deltaTime;
+
+        if (isHoldingBait)
+        {
+            moveDistance *= baitingSpeed;
+        }
+        else moveDistance *= moveSpeed;
         
-        canMove = !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * playerHeight, playerRadius, moveDir, moveDistance);
+        canMove = !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * playerHeight, playerRadius, moveDir, moveDistance,-5, QueryTriggerInteraction.Ignore);
         
         if (!canMove)
         {
@@ -104,7 +114,7 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
             transform.position += moveDir * moveDistance;
         }
 
-        isWalking = moveDir != Vector3.zero;
+        //isWalking = moveDir != Vector3.zero;
         transform.forward = Vector3.Slerp(transform.forward, moveDir, rotateSpeed * Time.deltaTime);
     }
 
@@ -119,35 +129,45 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
             lastInteractDir = moveDic;
         }
 
-        //Detect table object
+        //Detect interactable object
         if (Physics.Raycast(transform.position, lastInteractDir, out RaycastHit raycasthit, interactDistance, interactLayer))
         {
-            if (raycasthit.transform.TryGetComponent<BaseLocation>(out BaseLocation selectedLocation))
+            if (raycasthit.transform.TryGetComponent<IInteractable>(out IInteractable selectedTarget))
             {
-                if (selectedLocation != this.selectedLocation)
+                if (selectedTarget != this.selectedTarget)
                 {
-                    SetSelectedTable(selectedLocation);
+                    SetSelectedTarget(selectedTarget);
                 }
             }
             else
             {
-                SetSelectedTable(null);
+                SetSelectedTarget(null);
             }
         }
         else
         {
-            SetSelectedTable(null);
+            SetSelectedTarget(null);
         }
     }
 
-    private void SetSelectedTable(BaseLocation selectedLocation)
+    private void SetSelectedTarget(IInteractable selectedTarget)
     {
-        this.selectedLocation = selectedLocation;
+        this.selectedTarget = selectedTarget;
 
-        OnSelectedLocationChanged?.Invoke(this, new OnSelectedTableChangedEventArgs
+        OnSelectedTargetChanged?.Invoke(this, new OnSelectedTargetChangedEventArgs
         {
-            selectedLocation = selectedLocation
+            selectedTarget = selectedTarget
         });
+    }
+
+    public void SetBaiting()
+    {
+        isHoldingBait = !isHoldingBait;
+    }
+
+    public bool GetBaitingState()
+    {
+        return isHoldingBait;
     }
 
     public Transform GetHoldPointTransform()

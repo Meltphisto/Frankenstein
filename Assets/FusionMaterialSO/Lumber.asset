@@ -9,10 +9,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2968d813c143bc54f93fc4924e977333, type: 3}
-  m_Name: LumberToLeg
+  m_Script: {fileID: 11500000, guid: e6c6f4400556fa541a245728caad24b8, type: 3}
+  m_Name: Lumber
   m_EditorClassIdentifier: 
-  input: {fileID: 11400000, guid: 63b0d9826057b524b953326202a23db6, type: 2}
-  outputs:
-  - {fileID: 11400000, guid: 5388b0179c09afc478d65745eccc01de, type: 2}
-  maxProcessingStep: 0
+  id: 0
+  itemName: Lumber
+  prefab: {fileID: 1144090247754630043, guid: be932acb8cdccb04aadefe3eb2e64548, type: 3}
+  materialType: 2
+  sprite: {fileID: 0}

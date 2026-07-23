@@ -3,32 +3,33 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(CharacterController))]
 public class Player : MonoBehaviour, IFusionMaterialHolder
 {
     public static Player Instance { get; private set; }
 
     //GameInput Object
     private GameInput gameInput;
+    private CharacterController controller;
 
+    [Header("移动参数")]
     //Movement Related
+    [SerializeField] private float acceleration = 10f;
+    [SerializeField] private float deceleration = 8f;
     [SerializeField] private float moveSpeed = 10f;
-    [SerializeField] private float rotateSpeed = 10f;
     [SerializeField] private float baitingSpeed = 3f;
-    private bool isHoldingBait = false;
-    private bool canMove = false;
+    [SerializeField] private float rotateSpeed = 10f;
+    private bool isBaiting = false;
+
+    private float currentSpeed;
     //private bool isWalking = false;
 
-    //Collision Related
-    [SerializeField] private float playerRadius = 0.5f;
-    [SerializeField] private float playerHeight = 2f;
-
+    [Header("交互参数")]
     //Interaction Related
     [SerializeField] private float interactDistance = 2f;
     private Vector3 lastInteractDir;
     [SerializeField] private LayerMask interactLayer;
     private IInteractable selectedTarget;
-
-   
 
     public event EventHandler<OnSelectedTargetChangedEventArgs> OnSelectedTargetChanged;
     public class OnSelectedTargetChangedEventArgs : EventArgs
@@ -40,17 +41,29 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
     [SerializeField] private Transform holdPoint;
     private FusionMaterialObject holdingFusionMaterialObject;
 
+    
+    private Vector2 moveInput;
+    private Vector3 currentVelocity = Vector3.zero;
+
     private void Awake()
     {
         if (Instance == null) Instance = this;
+        controller = GetComponent<CharacterController>();
+        currentSpeed = moveSpeed;
     }
 
     private void Start()
     {
         gameInput = GameInput.Instance;
-        //Subscribe game input events
+
         gameInput.OnInteractAction += GameInput_OnInteractAction;
         gameInput.OnInteractAlterAction += GameInput_OnInteractAlterAction;
+    }
+
+    private void FixedUpdate()
+    {
+        HandleMovement();
+        HandleSelecting();
     }
 
     private void GameInput_OnInteractAlterAction(object sender, EventArgs e)
@@ -69,52 +82,24 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
         }
     }
 
-    private void Update()
-    {
-        HandleMovement();
-        HandleSelecting();
-    }
-
     private void HandleMovement()
     {
-        //Get move direction from player input
-        Vector2 inputVector = gameInput.GetMovementVectorNormalized();
-        Vector3 moveDir = new Vector3(inputVector.x, 0f, inputVector.y);
-        float moveDistance = Time.deltaTime;
+        moveInput = gameInput.GetMovementVectorNormalized();
+        //计算方向
+        Vector3 moveDir = new Vector3(moveInput.x, 0, moveInput.y).normalized;
+        Vector3 targetVelocity = moveDir * currentSpeed;
 
-        if (isHoldingBait)
-        {
-            moveDistance *= baitingSpeed;
-        }
-        else moveDistance *= moveSpeed;
-        
-        canMove = !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * playerHeight, playerRadius, moveDir, moveDistance,-5, QueryTriggerInteraction.Ignore);
-        
-        if (!canMove)
-        {
-            Vector3 moveDirX = new Vector3(moveDir.x, 0, 0).normalized;
-            canMove = moveDir.x != 0 && !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * playerHeight, playerRadius, moveDirX, moveDistance);
-            if (canMove)
-            {
-                moveDir = moveDirX;
-            }
-            else
-            {
-                Vector3 moveDirZ = new Vector3(0, 0, moveDir.z).normalized;
-                canMove = moveDir.z != 0 && !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * playerHeight, playerRadius, moveDirZ, moveDistance);
-                if (canMove)
-                {
-                    moveDir = moveDirZ;
-                }
-            }
-        }
+        //平滑插值（加/减速）
+        float currentAccel = moveInput.sqrMagnitude > 0.01f ? acceleration : deceleration;
+        currentVelocity = Vector3.Lerp(currentVelocity, targetVelocity, currentAccel * Time.deltaTime);
+        if (currentVelocity.magnitude > currentSpeed)
+            currentVelocity = currentVelocity.normalized * currentSpeed;
 
-        if (canMove)
-        {
-            transform.position += moveDir * moveDistance;
-        }
+        //CharacterController 处理移动
+        controller.Move(currentVelocity * Time.deltaTime);
 
         //isWalking = moveDir != Vector3.zero;
+        //朝向移动方向
         transform.forward = Vector3.Slerp(transform.forward, moveDir, rotateSpeed * Time.deltaTime);
     }
 
@@ -162,12 +147,22 @@ public class Player : MonoBehaviour, IFusionMaterialHolder
 
     public void SetBaiting()
     {
-        isHoldingBait = !isHoldingBait;
+        isBaiting = !isBaiting;
+
+        switch (isBaiting)
+        {
+            case true:
+                currentSpeed = baitingSpeed;
+                break;
+            case false:
+                currentSpeed = moveSpeed;
+                break;
+        }
     }
 
     public bool GetBaitingState()
     {
-        return isHoldingBait;
+        return isBaiting;
     }
 
     public Transform GetHoldPointTransform()

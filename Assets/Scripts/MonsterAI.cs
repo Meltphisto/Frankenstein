@@ -1,57 +1,67 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.EventSystems;
+using UnityEngine.AI;
 
-/// <summary>
-/// 怪物 AI 状态机 - 支持空闲、跟随引导、冲刺吃饵、提交传送
-/// </summary>
 public class MonsterAI : MonoBehaviour, IInteractable
 {
     // ---------- 状态定义 ----------
     public enum MonsterState
     {
-        Idle,           // 在缝合台附近小范围游荡
-        Following,      // 被玩家手持诱饵引导，慢速跟随
-        Charging,       // 响应投掷诱饵，高速冲刺
-        Submitting       // 已传送提交，销毁自身
+        Idle, //游荡，默认状态
+        Following, // 跟随玩家
+        Charging, //冲向诱饵
+        Submitted //提交中
     }
 
-    private MonsterState m_State = MonsterState.Idle;
-
     [Header("速度配置")]
-    [SerializeField] private float idleSpeed = 6f;          // 游荡速度
-    [SerializeField] private float followSpeed = 4f;   // 跟随速度为玩家速度的80%
-    [SerializeField] private float chargeSpeed = 15f;   // 冲刺速度为玩家速度的1.5倍
-    [SerializeField] private float rotateSpeed = 5f;
-    private bool canMove = true;
+    [SerializeField] private float idleSpeed = 5f;  //游荡时的移动速度
+    [SerializeField] private float followSpeed = 3f;   //跟随时的移动速度
+    [SerializeField] private float chargeSpeed = 10f;   //冲刺时的速度
 
-    [Header("交互范围")]
-    //[SerializeField] private float interactRange = 1.5f;      // 玩家按E引导的有效距离
-    //[SerializeField] private float followBreakDistance = 8f;  // 跟随脱钩距离
-
-    [SerializeField] private float monsterRadius = 1.0f;     // 交付判定半径
-    [SerializeField] private float monsterHeight = 1.0f;
-    [SerializeField] private LayerMask SubmissionLayer;
-    private Collider[] colliderResults = new Collider[10];
+    [Header("跟随参数")]
+    [SerializeField] private float followDistance = 1.8f;          // 与玩家保持的距离
+    [SerializeField] private float followBreakDistance = 8f;       // 脱钩距离
 
     [Header("游荡相关")]
-    private bool isIdling = false;
-    private Vector3 idleTarget;
+    [SerializeField] private float wanderRadius = 3f;
+    [SerializeField] private float sampleDistance = 2.0f;
+    [SerializeField] private float wanderingGap = 5f;
+
+    [Header("交互范围")]
+    [SerializeField] private float interactRange = 1.5f;
+    [SerializeField] private float deliveryRadius = 1.0f;
 
     [Header("诱饵相关")]
-    [SerializeField] private Transform baitTarget;
-    [SerializeField] private float followDistance = 1f; //玩家吸引时和玩家的相隔距离
-    //[SerializeField] private float baitDistance = 0.5f; // 诱饵吸引力场半径
-    //[SerializeField] private float baitLifetime = 3f;         // 诱饵力场持续时间
+    [SerializeField] private float baitAttractRadius = 1.2f;
+    [SerializeField] private float baitLifetime = 3f;
 
-    //private Transform deliveryPoint;
+    // ---------- 组件引用 ----------
+    private Player player;
+    private Transform deliveryPoint;
+    private NavMeshAgent agent;
+    private NavMeshPath path;
+
+    // ---------- 运行时状态 ----------
+    public MonsterState CurrentState { get; private set; } = MonsterState.Idle;
+    private Vector3 moveTarget; //移动的目标点
+
+    private Vector3 wanderCenter; //游荡时的中心点
+    private bool isWaitingWandering = true;
+    private float waitTimer;
+    private bool isTargetCalculated = false;   // 是否已计算出有效目标点
+    private int maxSampleAttempts = 10;        // 每次尝试采样的最大次数
+
+    private void Start()
+    {
+        player = Player.Instance;
+        agent = GetComponent<NavMeshAgent>();
+        path = new NavMeshPath();
+        moveTarget = transform.position;
+        SetNewIdleTarget();
+    }
+
     private void Update()
     {
-        // 状态机更新
-        switch (m_State)
+        switch (CurrentState)
         {
             case MonsterState.Idle:
                 UpdateIdle();
@@ -60,48 +70,123 @@ public class MonsterAI : MonoBehaviour, IInteractable
                 UpdateFollowing();
                 break;
             case MonsterState.Charging:
-                //UpdateCharging();
+                UpdateCharging();
                 break;
-            case MonsterState.Submitting:
-                // 无行为，等待销毁
+            case MonsterState.Submitted:
                 break;
         }
+    }
 
-        CheckSubmission();
+    // ---------- 状态更新方法 ----------
 
+    private void UpdateIdle()
+    {
+        if (isWaitingWandering)
+        {
+            waitTimer -= Time.deltaTime;
+
+            // 如果还未计算出有效目标，则持续尝试计算
+            if (!isTargetCalculated)
+            {
+                if (TryCalculateNextWanderTarget(out moveTarget))
+                {
+                    isTargetCalculated = true;  // 获得有效目标，停止计算
+                }
+            }
+
+            if (waitTimer <= 0 && isTargetCalculated)
+            {
+                // 等待结束，将预计算的目标点设为 NavMesh 目标
+                agent.SetDestination(moveTarget);
+                isWaitingWandering = false;
+                isTargetCalculated = false;
+            }
+            return;
+        }
+
+        // 非等待状态：检查是否到达目标
+        if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
+        {
+            StartWaiting();
+        }
+    }
+
+    /// <summary>
+    /// 跟随逻辑
+    /// </summary>
+    private void UpdateFollowing()
+    {
+        // 脱钩检测
+        float distToPlayer = Vector3.Distance(transform.position, player.transform.position);
+        if (distToPlayer > followBreakDistance)
+        {
+            SwitchState(MonsterState.Idle);
+            return;
+        }
+
+        // 移动:在距离大于期望值时追赶
+        if (distToPlayer > followDistance)
+        {
+            // 计算目标位置：玩家位置 + (怪物→玩家方向) * followDistance
+            Vector3 dirFromPlayer = (transform.position - player.transform.position).normalized;
+            moveTarget = player.transform.position + dirFromPlayer * followDistance;
+            // 使用NavMesh移动
+            agent.SetDestination(moveTarget);
+        }
+
+        // 面向玩家
+        Vector3 lookDir = player.transform.position - transform.position;
+        if (lookDir != Vector3.zero)
+        {
+            Quaternion targetRot = Quaternion.LookRotation(lookDir);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 5f);
+        }
+    }
+
+    private void UpdateCharging()
+    {
+        /*
+        // 冲刺方向
+        Vector3 dir = (followTransform - transform.position).normalized;
+        float playerSpeed = playerMovement != null ? playerMovement.CurrentSpeed : 5f;
+        float chargeSpeed = playerSpeed * chargeSpeedRatio;
+        transform.position += dir * chargeSpeed * Time.deltaTime;
+
+        // 检查是否到达诱饵落点
+        if (Vector3.Distance(transform.position, followTransform) < baitAttractRadius)
+        {
+            SwitchState(MonsterState.Idle);
+            return;
+        }
+
+        baitTimer -= Time.deltaTime;
+        if (baitTimer <= 0)
+            SwitchState(MonsterState.Idle);
+        */
     }
 
     // ---------- 状态切换 ----------
     private void SwitchState(MonsterState newState)
     {
-        m_State = newState;
+        CurrentState = newState;
 
-        // 进入新状态（初始化）
         switch (newState)
         {
             case MonsterState.Idle:
-                //SetNewIdleTarget();
+                SetNewIdleTarget();
                 break;
             case MonsterState.Following:
-                baitTarget = Player.Instance.transform;
+                agent.speed = followSpeed;
                 break;
             case MonsterState.Charging:
-                // 设置诱饵计时器
-                //baitTimer = baitLifetime;
                 break;
-            case MonsterState.Submitting:
-                // 开始提交动画或销毁
+            case MonsterState.Submitted:
                 OnSubmitted();
                 break;
         }
     }
 
-    private void OnSubmitted()
-    {
-        transform.LookAt(-Vector3.forward);
-        Destroy(gameObject, 3);
-    }
-
+    // ---------- 外部交互接口 ----------
     public void Interact(Player player)
     {
         player.SetBaiting();
@@ -117,97 +202,75 @@ public class MonsterAI : MonoBehaviour, IInteractable
         }
     }
 
-    public void InteractAlter(Player player)
+    public void OnBaitThrown(Vector3 targetPosition)
     {
-        //throw new System.NotImplementedException();
+        moveTarget = targetPosition;
+        SwitchState(MonsterState.Charging);
     }
 
-    private void UpdateFollowing()
+    // ---------- 辅助方法 ----------
+    private void SetNewIdleTarget()
     {
-        if (baitTarget == null) return;
+        agent.speed = idleSpeed;
+        wanderCenter = transform.position;
+        StartWaiting();
+    }
 
-        //Get move direction from player position
-        float distToPlayer = Vector3.Distance(transform.position, baitTarget.position);
-
-        // 计算目标位置：以玩家为圆心，沿怪物→玩家的方向，向外推 followDistance 距离
-        // 即：玩家位置 + (怪物位置 - 玩家位置).normalized * followDistance
-        Vector3 directionFromPlayer = (transform.position - baitTarget.position).normalized;
-        Vector3 targetPosition = baitTarget.position + directionFromPlayer * followDistance;
-
-        //1.是否可以移动
-        Vector3 moveDirection = (targetPosition - transform.position).normalized;
-        float moveDistance = followSpeed * Time.deltaTime;
-        canMove = !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * monsterHeight, monsterRadius, moveDirection, moveDistance,-5,QueryTriggerInteraction.Ignore);
-
-        if (!canMove)
+    /// <summary>
+    /// 尝试在游荡半径内采样一个可达的目标点
+    /// </summary>
+    private bool TryCalculateNextWanderTarget(out Vector3 target)
+    {
+        Vector3 center = wanderCenter;
+        for (int i = 0; i < maxSampleAttempts; i++)
         {
-            Vector3 moveDirX = new Vector3(moveDirection.x, 0, 0).normalized;
-            canMove = moveDirection.x != 0 && !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * monsterHeight, monsterRadius, moveDirX, moveDistance);
-            if (canMove)
+            Vector3 randomDirection = Random.insideUnitSphere * wanderRadius;
+            randomDirection.y = 0;
+            Vector3 randomPos = center + randomDirection;
+            NavMeshHit hit;
+            if (NavMesh.SamplePosition(randomPos, out hit, sampleDistance, NavMesh.AllAreas))
             {
-                moveDirection = moveDirX;
-            }
-            else
-            {
-                Vector3 moveDirZ = new Vector3(0, 0, moveDirection.z).normalized;
-                canMove = moveDirection.z != 0 && !Physics.CapsuleCast(transform.position, transform.position + Vector3.up * monsterHeight, monsterRadius, moveDirZ, moveDistance);
-                if (canMove)
+                // 确保目标点与当前位置有一定距离，避免原地打转
+                if (Vector3.Distance(hit.position, transform.position) > 0.5f)
                 {
-                    moveDirection = moveDirZ;
+                    target = hit.position;
+                    return true;
                 }
             }
         }
+        // 若所有尝试都失败，返回一个简单的偏移作为兜底（但标记为失败）
+        target = transform.position + new Vector3(Random.Range(-1f, 1f), 0, Random.Range(-1f, 1f));
+        return false;
+    }
 
-        if (canMove)
+    private void StartWaiting()
+    {
+        isWaitingWandering = true;
+        waitTimer = wanderingGap;
+        isTargetCalculated = false;// 重置计算标记
+        agent.ResetPath();// 停止 Agent 移动
+    }
+
+    public void SubmitMonster()
+    {
+        if (CurrentState == MonsterState.Submitted)
+            return;
+        SwitchState(MonsterState.Submitted);
+
+        if (player.GetBaitingState())
         {
-            //仅在“怪物与玩家的距离 > 期望距离”时才移动
-            if (distToPlayer > followDistance)
-            {
-                transform.position += moveDirection * moveDistance;
-            }
-
-        }
-
-        // 3. 转向玩家（始终执行，无论距离远近）
-        // 怪物永远面向玩家，保持“被注视”的交互感
-        Vector3 lookDirection = baitTarget.position - transform.position;
-        if (lookDirection != Vector3.zero)
-        {
-            // 只绕Y轴旋转（保持怪物直立）
-            Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
-            transform.rotation = Quaternion.Slerp(
-                transform.rotation,
-                targetRotation,
-                Time.deltaTime * rotateSpeed  // 平滑转向速度
-            );
+            player.SetBaiting();
         }
     }
 
-    private void SetNewIdleTarget()
+    private void OnSubmitted()
     {
-        idleTarget =transform.position;
+        // 通知关卡管理器（如有）
+        // 播放特效，然后销毁
+        Destroy(gameObject, 3.0f);
     }
 
-    private void UpdateIdle()
+    public void InteractAlter(Player player)
     {
-    }
-
-    private void HandleMovement()
-    {
-
-    }
-
-    private void CheckSubmission()
-    {
-        int counts = Physics.OverlapCapsuleNonAlloc(transform.position, transform.position + Vector3.up * monsterHeight, monsterRadius, colliderResults, SubmissionLayer);
-
-        for (int i = 0; i < counts; i++)
-        {
-            if (colliderResults[i].transform.GetComponent<SubmissionLocation>())
-            {
-                SwitchState(MonsterState.Submitting);
-                break;
-            }
-        }
     }
 }
